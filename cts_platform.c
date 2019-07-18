@@ -4,31 +4,15 @@
 #include "cts_platform.h"
 #include "cts_core.h"
 
-int tpd_rst_gpio_index = 0;
-int tpd_int_gpio_index = 1;
-
 size_t cts_plat_get_max_i2c_xfer_size(struct cts_platform_data *pdata)
 {
-#ifdef TPD_SUPPORT_I2C_DMA
-    if (pdata->dma_available) {
-        return CFG_CTS_MAX_I2C_XFER_SIZE;
-    } else {
-        return CFG_CTS_MAX_I2C_FIFO_XFER_SIZE;
-    }
-#else /* TPD_SUPPORT_I2C_DMA */
     return CFG_CTS_MAX_I2C_XFER_SIZE;
-#endif /* TPD_SUPPORT_I2C_DMA */
 }
 
 u8 *cts_plat_get_i2c_xfer_buf(struct cts_platform_data *pdata, 
     size_t xfer_size)
 {
-#ifdef TPD_SUPPORT_I2C_DMA
-    if (pdata->dma_available && xfer_size > CFG_CTS_MAX_I2C_FIFO_XFER_SIZE) {
-        return pdata->i2c_dma_buff_va;
-    } else
-#endif /* TPD_SUPPORT_I2C_DMA */
-        return pdata->i2c_fifo_buf;
+    return pdata->i2c_fifo_buf;
 }
 
 int cts_plat_i2c_write(struct cts_platform_data *pdata, u8 i2c_addr,
@@ -36,30 +20,13 @@ int cts_plat_i2c_write(struct cts_platform_data *pdata, u8 i2c_addr,
 {
     int ret = 0, retries = 0;
 
-#ifdef TPD_SUPPORT_I2C_DMA
     struct i2c_msg msg = {
-        .addr   = i2c_addr;
-        .flags  = !I2C_M_RD,
+        .flags    = 0,
+        .addr    = i2c_addr,
+        .buf    = (u8 *)src,
         .len    = len,
-        //.timing = 300,
+       // .scl_rate   = 200000
     };
-
-    if (pdata->dma_available && len > CFG_CTS_MAX_I2C_FIFO_XFER_SIZE) {
-        msg.ext_flag = (pdata->i2c_client->ext_flag | I2C_ENEXT_FLAG | I2C_DMA_FLAG);
-        msg.buf = (u8 *)pdata->i2c_dma_buff_pa;
-        memcpy(pdata->i2c_dma_buff_va, src, len);
-    } else {
-        msg.buf = (u8 *)src;
-    }
-    msg->len  = len;
-#else
-    struct i2c_msg msg = {
-        .addr  = i2c_addr,
-        .flags = !I2C_M_RD,
-        .len   = len,
-        .buf   = (u8 *)src,
-    };
-#endif /* TPD_SUPPORT_I2C_DMA */
 
     do {
         ret = i2c_transfer(pdata->i2c_client->adapter, &msg, 1);
@@ -86,45 +53,22 @@ int cts_plat_i2c_read(struct cts_platform_data *pdata, u8 i2c_addr,
 {
     int num_msg, ret = 0, retries = 0;
 
-#ifdef TPD_SUPPORT_I2C_DMA
     struct i2c_msg msgs[2] = {
         {
-            .addr   = i2c_addr,
-            .flags  = !I2C_M_RD,
-            .len    = wlen,
+            .addr    = i2c_addr,
+            .flags    = 0,
             .buf    = (u8 *)wbuf,
-            //.timing = 300,
+            .len    = wlen,
+            //.scl_rate   = 200000
         },
         {
-            .addr     = i2c_addr,
+            .addr    = i2c_addr,
             .flags    = I2C_M_RD,
-            .len      = rlen,
-            //.timing   = 300,
-        },
-    };
-    
-    if (pdata->dma_available && rlen > CFG_CTS_MAX_I2C_FIFO_XFER_SIZE) {
-        msgs[1].ext_flag = (pdata->i2c_client->ext_flag | I2C_ENEXT_FLAG | I2C_DMA_FLAG);
-        msgs[1].buf      = (u8 *)pdata->i2c_dma_buff_pa;
-    } else {
-        msgs[1].buf = (u8 *)rbuf;
-    }
-#else /* TPD_SUPPORT_I2C_DMA */
-    struct i2c_msg msgs[2] = {
-        {
-            .addr  = i2c_addr,
-            .flags = !I2C_M_RD,
-            .buf   = (u8 *)wbuf,
-            .len   = wlen
-        },
-        {
-            .addr  = i2c_addr,
-            .flags = I2C_M_RD,
-            .buf   = (u8 *)rbuf,
-            .len   = rlen
+            .buf    = (u8 *)rbuf,
+            .len    = rlen,
+          //  .scl_rate   = 200000
         }
     };
-#endif /* TPD_SUPPORT_I2C_DMA */
 
     if (wbuf == NULL || wlen == 0) {
         num_msg = 1;
@@ -146,10 +90,6 @@ int cts_plat_i2c_read(struct cts_platform_data *pdata, u8 i2c_addr,
             }
             continue;
         } else {
-#ifdef TPD_SUPPORT_I2C_DMA
-            memcpy(rbuf, pdata->i2c_dma_buff_va, rlen);
-#endif /* TPD_SUPPORT_I2C_DMA */
-
             return 0;
         }
     } while (++retries < retry);
@@ -228,44 +168,139 @@ static void cts_plat_touch_dev_irq_work(struct work_struct *work)
 }
 #endif /* CONFIG_GENERIC_HARDIRQS */
 
+#ifdef CONFIG_CTS_OF
+static int cts_plat_parse_dt(struct cts_platform_data *pdata,
+        struct device_node *dev_node)
+{
+    int ret;
+
+    cts_info("Parse device tree");
+
+    pdata->int_gpio = of_get_named_gpio(dev_node, CFG_CTS_OF_INT_GPIO_NAME, 0);
+    if (!gpio_is_valid(pdata->int_gpio)) {
+        cts_err("Parse INT GPIO from dt failed %d", pdata->int_gpio);
+        pdata->int_gpio = -1;
+    }
+    cts_info("  %-12s: %d", "int gpio", pdata->int_gpio);
+
+    pdata->irq = gpio_to_irq(pdata->int_gpio);
+    if (pdata->irq < 0) {
+        cts_err("Parse irq failed %d", ret);
+        return pdata->irq;
+    }
+    cts_info("  %-12s: %d", "irq num", pdata->irq);
+
+#ifdef CFG_CTS_HAS_RESET_PIN
+    pdata->rst_gpio = of_get_named_gpio(dev_node, CFG_CTS_OF_RST_GPIO_NAME, 0);
+    if (!gpio_is_valid(pdata->rst_gpio)) {
+        cts_err("Parse RST GPIO from dt failed %d", pdata->rst_gpio);
+        pdata->rst_gpio = -1;
+    }
+    cts_info("  %-12s: %d", "rst gpio", pdata->rst_gpio);
+#endif /* CFG_CTS_HAS_RESET_PIN */
+
+    ret = of_property_read_u32(dev_node, CFG_CTS_OF_X_RESOLUTION_NAME,
+        &pdata->res_x);
+    if (ret) {
+        cts_warn("Parse X resolution from dt failed %d", ret);
+        //return ret;
+    }
+    cts_info("  %-12s: %d", "X resolution", pdata->res_x);
+
+    ret = of_property_read_u32(dev_node, CFG_CTS_OF_Y_RESOLUTION_NAME,
+        &pdata->res_y);
+    if (ret) {
+        cts_warn("Parse Y resolution from dt failed %d", ret);
+        //return ret;
+    }
+    cts_info("  %-12s: %d", "Y resolution", pdata->res_y);
+
+return 0;
+}
+#endif /* CONFIG_CTS_OF */
+
 int cts_init_platform_data(struct cts_platform_data *pdata,
         struct i2c_client *i2c_client)
 {
-    struct device_node *node = NULL;
-	u32 ints[2] = { 0, 0 };
+    struct input_dev *input_dev;
+    int ret;
 
     cts_info("Init");
 
-    pdata->i2c_client = i2c_client;
-    pdata->ts_input_dev = tpd->dev;
+#ifdef CONFIG_CTS_OF
+    {
+        struct device *dev = &i2c_client->dev;
+        ret = cts_plat_parse_dt(pdata, dev->of_node);
+        if (ret) {
+            cts_err("Parse dt failed %d", ret);
+            return ret;
+        }
+    }
+#endif /* CONFIG_CTS_OF */
 
+    pdata->i2c_client = i2c_client;
     rt_mutex_init(&pdata->dev_lock);
 
-#if !defined(CONFIG_GENERIC_HARDIRQS)
-    /* Init work for bottom half of interrupt */
-    INIT_WORK(&pdata->ts_irq_work, cts_plat_touch_dev_irq_work);
-#endif /* CONFIG_GENERIC_HARDIRQS */
-
-    //if ((node = of_find_matching_node(node, touch_of_match)) == NULL) {  //of_find_compatible_node
-	if ((node = of_find_compatible_node(NULL, NULL, "mediatek,cap_touch")) == NULL) {
-        cts_err("Find touch eint node failed");
-        return -ENODATA;
-    }
-    if (of_property_read_u32_array(node, "debounce", ints, ARRAY_SIZE(ints)) == 0) {
-		gpio_set_debounce(ints[0], ints[1]);
-	} else {
-		cts_info("Debounce time not found");
-	}
-    pdata->irq = irq_of_parse_and_map(node, 0);
-    if (pdata->irq == 0) {
-        cts_err("Parse irq in dts failed");
-        return -ENODEV;
-    }
     pdata->i2c_client->irq = pdata->irq;
     spin_lock_init(&pdata->irq_lock);
 
+    input_dev = input_allocate_device();
+    if (input_dev == NULL) {
+        cts_err("Failed to allocate input device.");
+        return -ENOMEM;
+    }
+
+    /** - Init input device */
+    input_dev->name = CFG_CTS_DEVICE_NAME;
+    input_dev->id.bustype = BUS_I2C;
+    input_dev->dev.parent = &pdata->i2c_client->dev;
+
+    input_dev->evbit[0] =   BIT_MASK(EV_SYN) |
+                            BIT_MASK(EV_KEY) |
+                            BIT_MASK(EV_ABS);
+#ifdef CFG_CTS_SWAP_XY
+    input_set_abs_params(input_dev, ABS_MT_POSITION_X,
+            0, pdata->res_y, 0, 0);
+    input_set_abs_params(input_dev, ABS_MT_POSITION_Y,
+            0, pdata->res_x, 0, 0);
+#else /* CFG_CTS_SWAP_XY */
+    input_set_abs_params(input_dev, ABS_MT_POSITION_X,
+            0, pdata->res_x, 0, 0);
+    input_set_abs_params(input_dev, ABS_MT_POSITION_Y,
+            0, pdata->res_y, 0, 0);
+#endif /* CFG_CTS_SWAP_XY */
+
+    input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
+    input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR,0, 255, 0, 0);
+    input_set_abs_params(input_dev, ABS_MT_TRACKING_ID,0, 255, 0, 0);
+
+    input_set_capability(input_dev, EV_KEY, BTN_TOUCH);
+
+#ifdef CONFIG_CTS_SLOTPROTOCOL
+    input_mt_init_slots(input_dev, CFG_CTS_MAX_TOUCH_NUM,
+        INPUT_MT_DIRECT | INPUT_MT_DROP_UNUSED);
+#endif /* CONFIG_CTS_SLOTPROTOCOL */
+
+    input_set_drvdata(input_dev, pdata);
+
+    ret = input_register_device(input_dev);
+    if (ret) {
+        cts_err("Failed to register input device");
+        return ret;
+    }
+
+    pdata->ts_input_dev = input_dev;
+
+#if !defined(CONFIG_GENERIC_HARDIRQS)
+    INIT_WORK(&pdata->ts_irq_work, cts_plat_touch_dev_irq_work);
+#endif /* CONFIG_GENERIC_HARDIRQS */
+
 #ifdef CONFIG_CTS_VIRTUALKEY
-    pdata->vkey_num = tpd_dts_data.tpd_keycnt;
+    {
+        u8 vkey_keymap[CFG_CTS_NUM_VKEY] = CFG_CTS_VKEY_KEYCODES;
+        memcpy(pdata->vkey_keycodes, vkey_keymap, sizeof(vkey_keymap));
+        pdata->vkey_num = CFG_CTS_NUM_VKEY;
+    }
 #endif /* CONFIG_CTS_VIRTUALKEY */
 
 #ifdef CONFIG_CTS_GESTURE
@@ -276,18 +311,6 @@ int cts_init_platform_data(struct cts_platform_data *pdata,
     }
 #endif /* CONFIG_CTS_GESTURE */
 
-#ifdef TPD_SUPPORT_I2C_DMA
-    tpd->dev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
-    pdata->i2c_dma_buff_va = (u8 *)dma_alloc_coherent(&tpd->dev->dev,
-            CFG_CTS_MAX_I2C_XFER_SIZE, &pdata->i2c_dma_buff_pa, GFP_KERNEL);
-    if (pdata->i2c_dma_buff_va == NULL) {
-        cts_err("Allocate I2C DMA Buffer failed!");
-        //return -ENOMEM;
-    } else {
-        pdata->dma_available = true;
-    }
-#endif /* TPD_SUPPORT_I2C_DMA */
-
     return 0;
 }
 
@@ -295,7 +318,7 @@ int cts_deinit_platform_data(struct cts_platform_data *pdata)
 {
     cts_info("De-Init");
     if (pdata->ts_input_dev) {
-        //input_unregister_device(pdata->ts_input_dev);
+        input_unregister_device(pdata->ts_input_dev);
         pdata->ts_input_dev = NULL;
     }
     return 0;
@@ -303,12 +326,53 @@ int cts_deinit_platform_data(struct cts_platform_data *pdata)
 
 int cts_plat_request_resource(struct cts_platform_data *pdata)
 {
+    int ret;
+
     cts_info("Request resource");
 
-    tpd_gpio_as_int(tpd_int_gpio_index);
-    tpd_gpio_output(tpd_rst_gpio_index, 1);
+    ret = gpio_request_one(pdata->int_gpio, GPIOF_IN,
+        CFG_CTS_DEVICE_NAME "-int");
+    if (ret) {
+        cts_err("Request INT gpio (%d) failed %d", pdata->int_gpio, ret);
+        goto err_out;
+    }
+
+#ifdef CFG_CTS_HAS_RESET_PIN
+    ret = gpio_request_one(pdata->rst_gpio, GPIOF_OUT_INIT_HIGH,
+        CFG_CTS_DEVICE_NAME "-rst");
+    if (ret) {
+        cts_err("Request RST gpio (%d) failed %d", pdata->rst_gpio, ret);
+        goto err_free_int;
+    }
+#endif /* CFG_CTS_HAS_RESET_PIN */
+
 
     return 0;
+
+#ifdef CONFIG_CTS_REGULATOR
+err_free_rst:
+#endif /* CONFIG_CTS_REGULATOR */
+#ifdef CFG_CTS_HAS_RESET_PIN
+    gpio_free(pdata->rst_gpio);
+err_free_int:
+#endif /* CFG_CTS_HAS_RESET_PIN */
+    gpio_free(pdata->int_gpio);
+err_out:
+    return ret;
+}
+
+void cts_plat_free_resource(struct cts_platform_data *pdata)
+{
+    cts_info("Free resource");
+
+    if (gpio_is_valid(pdata->int_gpio)) {
+        gpio_free(pdata->int_gpio);
+    }
+#ifdef CFG_CTS_HAS_RESET_PIN
+    if (gpio_is_valid(pdata->rst_gpio)) {
+        gpio_free(pdata->rst_gpio);
+    }
+#endif /* CFG_CTS_HAS_RESET_PIN */
 }
 
 int cts_plat_request_irq(struct cts_platform_data *pdata)
@@ -342,26 +406,6 @@ int cts_plat_request_irq(struct cts_platform_data *pdata)
 void cts_plat_free_irq(struct cts_platform_data *pdata)
 {
     free_irq(pdata->irq, pdata);
-}
-
-void cts_plat_free_resource(struct cts_platform_data *pdata)
-{
-    cts_info("Free resource");
-
-    /**
-     * Note:
-     *    If resource request without managed, should free all resource
-     *    requested in cts_plat_request_resource().
-     */
-     
-#ifdef TPD_SUPPORT_I2C_DMA
-    if (pdata->i2c_dma_buff_va) {
-        dma_free_coherent(&tpd->dev->dev, CFG_CTS_MAX_I2C_XFER_SIZE,
-            pdata->i2c_dma_buff_va, pdata->i2c_dma_buff_pa);
-        pdata->i2c_dma_buff_va = NULL;
-        pdata->i2c_dma_buff_pa = 0;
-    }
-#endif /* TPD_SUPPORT_I2C_DMA */
 }
 
 int cts_plat_enable_irq(struct cts_platform_data *pdata)
@@ -406,24 +450,22 @@ int cts_plat_disable_irq(struct cts_platform_data *pdata)
     return -ENODEV;
 }
 
-
 int cts_plat_reset_device(struct cts_platform_data *pdata)
 {
     struct cts_device *cts_dev = pdata->cts_dev;
     
     cts_info("Reset device");
-
+    
 #ifdef CFG_CTS_HAS_RESET_PIN
-    tpd_gpio_output(tpd_rst_gpio_index, 0);
+    gpio_set_value(pdata->rst_gpio, 0);
     mdelay(1);
-    tpd_gpio_output(tpd_rst_gpio_index, 1);
+    gpio_set_value(pdata->rst_gpio, 1);
     mdelay(50);
 #endif /* CFG_CTS_HAS_RESET_PIN */
-
+  
     cts_get_program_i2c_addr(cts_dev);
     return 0;
 }
-
 
 int cts_plat_power_up_device(struct cts_platform_data *pdata)
 {
@@ -443,8 +485,7 @@ int cts_plat_init_touch_device(struct cts_platform_data *pdata)
 {
     cts_info("Init touch device");
 
-    return input_mt_init_slots(pdata->ts_input_dev,
-        tpd_dts_data.touch_max_num, INPUT_MT_DIRECT | INPUT_MT_DROP_UNUSED);
+    return 0;
 }
 
 void cts_plat_deinit_touch_device(struct cts_platform_data *pdata)
@@ -463,7 +504,6 @@ void cts_plat_deinit_touch_device(struct cts_platform_data *pdata)
     }
 }
 
-static int tpd_history_x, tpd_history_y;
 int cts_plat_process_touch_msg(struct cts_platform_data *pdata,
             struct cts_device_touch_msg *msgs, int num)
 {
@@ -483,10 +523,10 @@ int cts_plat_process_touch_msg(struct cts_platform_data *pdata,
         swap(x,y);
 #endif /* CFG_CTS_SWAP_XY */
 #ifdef CFG_CTS_WRAP_X
-        x = wrap(TPD_RES_X,x);
+        x = wrap(pdata->res_x,x);
 #endif /* CFG_CTS_WRAP_X */
 #ifdef CFG_CTS_WRAP_Y
-        y = wrap(TPD_RES_Y,y);
+        y = wrap(pdata->res_y,y);
 #endif /* CFG_CTS_WRAP_Y */
 
         cts_dbg("  Process touch msg[%d]: id[%u] ev=%u x=%u y=%u p=%u",
@@ -496,17 +536,6 @@ int cts_plat_process_touch_msg(struct cts_platform_data *pdata,
         input_mt_slot(input_dev, msgs[i].id);
         switch (msgs[i].event) {
             case CTS_DEVICE_TOUCH_EVENT_DOWN:
-                TPD_DEBUG_SET_TIME;
-                TPD_EM_PRINT(x, y, x, y, msgs[i].id, 1);
-                tpd_history_x = x;
-                tpd_history_y = y;
-#ifdef CONFIG_MTK_BOOT
-                if (tpd_dts_data.use_tpd_button) {
-                    if (FACTORY_BOOT == get_boot_mode() ||
-                        RECOVERY_BOOT == get_boot_mode())
-                        tpd_button(x, y, 1);
-                }
-#endif /* CONFIG_MTK_BOOT */
             case CTS_DEVICE_TOUCH_EVENT_MOVE:
             case CTS_DEVICE_TOUCH_EVENT_STAY:
                 contact++;
@@ -518,18 +547,6 @@ int cts_plat_process_touch_msg(struct cts_platform_data *pdata,
                 break;
 
             case CTS_DEVICE_TOUCH_EVENT_UP:
-                TPD_DEBUG_SET_TIME;
-                TPD_EM_PRINT(tpd_history_x, tpd_history_y, tpd_history_x, tpd_history_y, msgs[i].id, 0);
-                tpd_history_x = 0;
-                tpd_history_y = 0;
-#ifdef CONFIG_MTK_BOOT
-                if (tpd_dts_data.use_tpd_button) {
-                    if (FACTORY_BOOT == get_boot_mode() ||
-                        RECOVERY_BOOT == get_boot_mode())
-                        tpd_button(0, 0, 0);
-                }
-#endif /* CONFIG_MTK_BOOT */
-                //input_report_key(input_dev, BTN_TOUCH, 0);
                 input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, false);
                 break;
 
@@ -604,16 +621,15 @@ int cts_plat_release_all_touch(struct cts_platform_data *pdata)
 #ifdef CONFIG_CTS_VIRTUALKEY
 int cts_plat_init_vkey_device(struct cts_platform_data *pdata)
 {
+    int i;
+
+    cts_info("Init VKey");
+
     pdata->vkey_state = 0;
 
-    cts_info("Init Vkey");
-
-    if (tpd_dts_data.use_tpd_button) {
-        cts_info("Init vkey");
-
-        pdata->vkey_state = 0;
-        tpd_button_setting(tpd_dts_data.tpd_key_num, tpd_dts_data.tpd_key_local,
-                           tpd_dts_data.tpd_key_dim_local);
+    for (i = 0; i <  pdata->vkey_num; i++) {
+        input_set_capability(pdata->ts_input_dev,
+            EV_KEY, pdata->vkey_keycodes[i]);
     }
 
     return 0;
@@ -629,19 +645,15 @@ void cts_plat_deinit_vkey_device(struct cts_platform_data *pdata)
 int cts_plat_process_vkey(struct cts_platform_data *pdata, u8 vkey_state)
 {
     u8  event;
-    int x, y, i;
+    int i;
 
     event = pdata->vkey_state ^ vkey_state;
 
     cts_dbg("Process vkey state=0x%02x, event=0x%02x", vkey_state, event);
 
     for (i = 0; i < pdata->vkey_num; i++) {
-        if (event & BIT(i)) {
-            tpd_button(x, y, vkey_state & BIT(i));
-
-            /* MTK fobidon more than one key pressed in the same time */
-            break;
-        }
+        input_report_key(pdata->ts_input_dev,
+                        pdata->vkey_keycodes[i], vkey_state & BIT(i) ? 1 : 0);
     }
 
     pdata->vkey_state = vkey_state;
@@ -657,7 +669,7 @@ int cts_plat_release_all_vkey(struct cts_platform_data *pdata)
 
     for (i = 0; i < pdata->vkey_num; i++) {
         if (pdata->vkey_state & BIT(i)) {
-            tpd_button(x, y, 0);
+            input_report_key(pdata->ts_input_dev, pdata->vkey_keycodes[i], 0);
         }
     }
 

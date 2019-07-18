@@ -37,22 +37,12 @@
 #include <linux/of_irq.h>
 #endif /* CONFIG_OF */
 
+#include <linux/fb.h>
+#include <linux/notifier.h>
+
 #include "cts_config.h"
 
-#ifdef TPD_SUPPORT_I2C_DMA
-#include <linux/dma-mapping.h>
-#endif /* TPD_SUPPORT_I2C_DMA */
-
-#ifdef CONFIG_MTK_BOOT
-#include "mtk_boot_common.h"
-#endif /* CONFIG_MTK_BOOT */
-
-#include "tpd.h"
-#include "tpd_debug.h"
-#include "upmu_common.h"
-
 extern bool cts_show_debug_log;
-extern struct chipone_ts_data *chipone_ts_data;
 
 #ifndef LOG_TAG
 #define LOG_TAG         ""
@@ -76,10 +66,18 @@ struct cts_device_gesture_info;
 
 struct cts_platform_data {
     int irq;
+    int int_gpio;
+#ifdef CFG_CTS_HAS_RESET_PIN
+    int rst_gpio;
+#endif /* CFG_CTS_HAS_RESET_PIN */
+
+    u32 res_x;
+    u32 res_y;
 
 #ifdef CONFIG_CTS_VIRTUALKEY
     u8  vkey_num;
     u8  vkey_state;
+    u8  vkey_keycodes[CFG_CTS_MAX_VKEY_NUM];
 #endif /* CONFIG_CTS_VIRTUALKEY */
 
     struct i2c_client *i2c_client;
@@ -101,14 +99,11 @@ struct cts_platform_data {
     bool irq_wake_enabled;
 #endif /* CONFIG_CTS_GESTURE */
 
-#ifdef TPD_SUPPORT_I2C_DMA
-    u8 *i2c_dma_buff_va;
-    dma_addr_t i2c_dma_buff_pa;
-#endif /* TPD_SUPPORT_I2C_DMA */
+#ifdef CONFIG_CTS_PM_FB_NOTIFIER
+    struct notifier_block fb_notifier;
+#endif /* CONFIG_CTS_PM_FB_NOTIFIER */
 
     u8 i2c_fifo_buf[CFG_CTS_MAX_I2C_XFER_SIZE];
-
-    bool dma_available;
 
 };
 

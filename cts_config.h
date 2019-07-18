@@ -4,9 +4,9 @@
 /** Driver version */
 #define CFG_CTS_DRIVER_MAJOR_VERSION        1
 #define CFG_CTS_DRIVER_MINOR_VERSION        0
-#define CFG_CTS_DRIVER_PATCH_VERSION        0
+#define CFG_CTS_DRIVER_PATCH_VERSION        1
 
-#define CFG_CTS_DRIVER_VERSION              "v1.0.0"
+#define CFG_CTS_DRIVER_VERSION              "v1.0.1"
 
 /** Whether reset pin is used */
 #define CFG_CTS_HAS_RESET_PIN
@@ -29,7 +29,7 @@
 
 #ifdef CONFIG_SYSFS
     /* Sys FS for gesture report, debug feature etc. */
-    #define CONFIG_CTS_SYSFS
+   #define CONFIG_CTS_SYSFS
 #endif /* CONFIG_SYSFS */
 
 #define CFG_CTS_MAX_TOUCH_NUM               (5)
@@ -74,7 +74,7 @@
 
 //#define CONFIG_CTS_GLOVE
 
-//#define CONFIG_CTS_CHARGER_DETECT
+//#define CONFIG_CTS_PROXIMITY
 
 /* ESD protection */
 //#define CONFIG_CTS_ESD_PROTECTION
@@ -93,9 +93,9 @@
  * Platform configurations
  ****************************************************************************/
 
-#ifdef CONFIG_MTK_PLATFORM
-#include "cts_plat_mtk_config.h"
-#endif /* CONFIG_MTK_PLATFORM */
+#ifdef CONFIG_ARCH_MSM
+#include "cts_plat_qcom_config.h"
+#endif /* CONFIG_ARCH_MSM */
 
 #endif /* CTS_CONFIG_H */
 

@@ -455,8 +455,8 @@ const struct cts_firmware *cts_request_driver_builtin_firmware_by_index(
                  "hwid: %04x fwid: %04x size: %zu INVALID",
             firmware->name, firmware->hwid, firmware->hwid, firmware->size);
     } else {
-        cts_warn("Request driver builtin by chip_index %u too large >= %zu"
-            "or fw_index %u too large >= %zu",
+        cts_warn("Request driver builtin by chip_index %u too large >= %u"
+            "or fw_index %u too large >= %d",
             chip_index, NUM_DRIVER_BUILTIN_FIRMWARE,
             fw_index,cts_get_fw_num_driver_builtin());
     }

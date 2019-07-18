@@ -1358,7 +1358,7 @@ int cts_test(struct cts_device *cts_dev, const char *filepath)
 cts_cfg_file_err:
         
     kfree(test_config);
-allocate_test_cfg_err:
+//allocate_test_cfg_err:
     ret = filp_close(file, NULL);
     if (ret) {
         cts_warn("Close file '%s' failed %d", filepath, ret);

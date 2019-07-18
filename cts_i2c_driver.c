@@ -5,11 +5,11 @@
 #include "cts_core.h"
 #include "cts_sysfs.h"
 
-bool cts_show_debug_log = false;
+bool cts_show_debug_log = 0;
 module_param_named(debug_log, cts_show_debug_log, bool, 0660);
 MODULE_PARM_DESC(debug_log, "Show debug log control");
 
-int cts_suspend(struct chipone_ts_data *cts_data)
+static int cts_suspend(struct chipone_ts_data *cts_data)
 {
     int ret;
 
@@ -54,11 +54,16 @@ int cts_suspend(struct chipone_ts_data *cts_data)
     return 0;
 }
 
-int cts_resume(struct chipone_ts_data *cts_data)
+static int cts_resume(struct chipone_ts_data *cts_data)
 {
     int ret;
 
     cts_info("Resume");
+
+#ifdef CONFIG_CTS_PROXIMITY
+
+
+#endif/* CONFIG_CTS_PROXIMITY */
 
 #ifdef CONFIG_CTS_GESTURE
     if (cts_is_gesture_wakeup_enabled(&cts_data->cts_dev)) {
@@ -88,6 +93,51 @@ int cts_resume(struct chipone_ts_data *cts_data)
 
     return 0;
 }
+
+#ifdef CONFIG_CTS_PM_FB_NOTIFIER
+static int fb_notifier_callback(struct notifier_block *nb,
+        unsigned long action, void *data)
+{
+    const struct cts_platform_data *pdata = 
+        container_of(nb, struct cts_platform_data, fb_notifier);
+    struct chipone_ts_data *cts_data =
+        container_of(pdata->cts_dev, struct chipone_ts_data, cts_dev);
+    struct fb_event *evdata = data;
+
+    cts_info("FB notifier callback");
+
+    if (evdata && evdata->data) {
+        int blank = *(int *)evdata->data;
+
+        if (action == FB_EVENT_BLANK && blank == FB_BLANK_UNBLANK) {
+            cts_resume(cts_data);
+            return NOTIFY_OK;
+        } else if (action == FB_EARLY_EVENT_BLANK && blank == FB_BLANK_POWERDOWN) {
+            cts_suspend(cts_data);
+            return NOTIFY_OK;
+        }
+    }
+
+    return NOTIFY_DONE;
+}
+
+static int cts_init_pm_fb_notifier(struct chipone_ts_data * cts_data)
+{
+    cts_info("Init FB notifier");
+
+    cts_data->pdata->fb_notifier.notifier_call = fb_notifier_callback;
+
+    return fb_register_client(&cts_data->pdata->fb_notifier);
+}
+
+static int cts_deinit_pm_fb_notifier(struct chipone_ts_data * cts_data)
+{
+    cts_info("Deinit FB notifier");
+
+    return fb_unregister_client(&cts_data->pdata->fb_notifier); 
+}
+
+#endif /* CONFIG_CTS_PM_FB_NOTIFIER */
 
 static int cts_i2c_driver_probe(struct i2c_client *client,
         const struct i2c_device_id *id)
@@ -124,8 +174,6 @@ static int cts_i2c_driver_probe(struct i2c_client *client,
         ret = -ENOMEM;
         goto err_free_cts_data;
     }
-
-    chipone_ts_data = cts_data;
 
     i2c_set_clientdata(client, cts_data);
     cts_data->i2c_client = client;
@@ -190,10 +238,18 @@ static int cts_i2c_driver_probe(struct i2c_client *client,
         cts_warn("Add sysfs entry for device failed %d", ret);
     }
 
+#ifdef CONFIG_CTS_PM_FB_NOTIFIER
+    ret = cts_init_pm_fb_notifier(cts_data);
+    if (ret) {
+        cts_err("Init FB notifier failed %d", ret);
+        goto err_deinit_sysfs;
+    }   
+#endif /* CONFIG_CTS_PM_FB_NOTIFIER */
+
     ret = cts_plat_request_irq(cts_data->pdata);
     if (ret < 0) {
         cts_err("Request IRQ failed %d", ret);
-        goto err_deinit_sysfs;
+        goto err_register_fb;
     }
 
     ret = cts_start_device(&cts_data->cts_dev);
@@ -202,14 +258,15 @@ static int cts_i2c_driver_probe(struct i2c_client *client,
         goto err_free_irq;
     }
 
-#ifdef CONFIG_MTK_PLATFORM
-    tpd_load_status = 1;
-#endif /* CONFIG_MTK_PLATFORM */
-
     return 0;
-
+    
 err_free_irq:
     cts_plat_free_irq(cts_data->pdata);
+
+err_register_fb:
+#ifdef CONFIG_CTS_PM_FB_NOTIFIER
+    cts_deinit_pm_fb_notifier(cts_data);
+#endif /* CONFIG_CTS_PM_FB_NOTIFIER */
 err_deinit_sysfs:
     cts_sysfs_remove_device(&client->dev);
 #ifdef CONFIG_CTS_LEGACY_TOOL
@@ -264,7 +321,13 @@ static int cts_i2c_driver_remove(struct i2c_client *client)
             cts_warn("Stop device failed %d", ret);
         }
 
+        //input_free_device(cts_data->pdata->ts_input_dev);
+
         cts_plat_free_irq(cts_data->pdata);
+
+#ifdef CONFIG_CTS_PM_FB_NOTIFIER       
+        cts_deinit_pm_fb_notifier(cts_data);
+#endif /* CONFIG_CTS_PM_FB_NOTIFIER */
 
         cts_tool_deinit(cts_data);
 
@@ -299,126 +362,159 @@ static int cts_i2c_driver_remove(struct i2c_client *client)
     return ret;
 }
 
+#ifdef CONFIG_CTS_PM_LEGACY
+static int cts_i2c_driver_suspend(struct device *dev, pm_message_t state)
+{
+    cts_info("Suspend by legacy power management");
+    return cts_suspend(dev_get_drvdata(dev));
+}
+
+static int cts_i2c_driver_resume(struct device *dev)
+{
+    cts_info("Resume by legacy power management");
+    return cts_resume(dev_get_drvdata(dev));
+}
+#endif /* CONFIG_CTS_PM_LEGACY */
+
+#ifdef CONFIG_CTS_PM_GENERIC
+static int cts_i2c_driver_pm_suspend(struct device *dev)
+{
+    cts_info("Suspend by bus power management");
+    return cts_suspend(dev_get_drvdata(dev));
+}
+
+static int cts_i2c_driver_pm_resume(struct device *dev)
+{
+    cts_info("Resume by bus power management");
+    return cts_resume(dev_get_drvdata(dev));
+}
+
+/* bus control the suspend/resume procedure */
+static const struct dev_pm_ops cts_i2c_driver_pm_ops = {
+    .suspend = cts_i2c_driver_pm_suspend,
+    .resume = cts_i2c_driver_pm_resume,
+};
+#endif /* CONFIG_CTS_PM_GENERIC */
 
 #ifdef CONFIG_CTS_SYSFS
 static ssize_t reset_pin_show(struct device_driver *driver, char *buf)
 {
-	return sprintf(buf, "CFG_CTS_HAS_RESET_PIN: %c\n",
+    return sprintf(buf, "CFG_CTS_HAS_RESET_PIN: %c\n",
 #ifdef CFG_CTS_HAS_RESET_PIN
         'Y'
 #else
         'N'
 #endif
-	    );
+    );
 }
 static DRIVER_ATTR(reset_pin, S_IRUGO, reset_pin_show, NULL);
 
 static ssize_t swap_xy_show(struct device_driver *dev, char *buf)
 {
-	return sprintf(buf, "CFG_CTS_SWAP_XY: %c\n",
+    return sprintf(buf, "CFG_CTS_SWAP_XY: %c\n",
 #ifdef CFG_CTS_SWAP_XY
         'Y'
 #else
         'N'
 #endif
-	    );
+    );
 }
 static DRIVER_ATTR(swap_xy, S_IRUGO, swap_xy_show, NULL);
 
 static ssize_t wrap_x_show(struct device_driver *dev, char *buf)
 {
-	return sprintf(buf, "CFG_CTS_WRAP_X: %c\n",
+    return sprintf(buf, "CFG_CTS_WRAP_X: %c\n",
 #ifdef CFG_CTS_WRAP_X
         'Y'
 #else
         'N'
 #endif
-	    );
+    );
 }
 static DRIVER_ATTR(wrap_x, S_IRUGO, wrap_x_show, NULL);
 
 static ssize_t wrap_y_show(struct device_driver *dev, char *buf)
 {
-	return sprintf(buf, "CFG_CTS_WRAP_Y: %c\n",
+    return sprintf(buf, "CFG_CTS_WRAP_Y: %c\n",
 #ifdef CFG_CTS_WRAP_Y
         'Y'
 #else
         'N'
 #endif
-	    );
+    );
 }
 static DRIVER_ATTR(wrap_y, S_IRUGO, wrap_y_show, NULL);
 
 static ssize_t force_update_show(struct device_driver *dev, char *buf)
 {
-	return sprintf(buf, "CFG_CTS_HAS_RESET_PIN: %c\n",
+    return sprintf(buf, "CFG_CTS_HAS_RESET_PIN: %c\n",
 #ifdef CFG_CTS_FIRMWARE_FORCE_UPDATE
         'Y'
 #else
         'N'
 #endif
-	    );
+    );
 }
 static DRIVER_ATTR(force_update, S_IRUGO, force_update_show, NULL);
 
 static ssize_t max_touch_num_show(struct device_driver *dev, char *buf)
 {
-	return sprintf(buf, "CFG_CTS_MAX_TOUCH_NUM: %d\n",
+    return sprintf(buf, "CFG_CTS_MAX_TOUCH_NUM: %d\n",
         CFG_CTS_MAX_TOUCH_NUM);
 }
 static DRIVER_ATTR(max_touch_num, S_IRUGO, max_touch_num_show, NULL);
 
 static ssize_t vkey_show(struct device_driver *dev, char *buf)
 {
-	return sprintf(buf, "CONFIG_CTS_VIRTUALKEY: %c\n",
+    return sprintf(buf, "CONFIG_CTS_VIRTUALKEY: %c\n",
 #ifdef CONFIG_CTS_VIRTUALKEY
         'Y'
 #else
         'N'
 #endif
-	    );
+    );
 }
 static DRIVER_ATTR(vkey, S_IRUGO, vkey_show, NULL);
 
 static ssize_t gesture_show(struct device_driver *dev, char *buf)
 {
-	return sprintf(buf, "CONFIG_CTS_GESTURE: %c\n",
+    return sprintf(buf, "CONFIG_CTS_GESTURE: %c\n",
 #ifdef CONFIG_CTS_GESTURE
         'Y'
 #else
         'N'
 #endif
-	    );
+    );
 }
 static DRIVER_ATTR(gesture, S_IRUGO, gesture_show, NULL);
 
 static ssize_t esd_protection_show(struct device_driver *dev, char *buf)
 {
-	return sprintf(buf, "CONFIG_CTS_ESD_PROTECTION: %c\n",
+    return sprintf(buf, "CONFIG_CTS_ESD_PROTECTION: %c\n",
 #ifdef CONFIG_CTS_ESD_PROTECTION
         'Y'
 #else
         'N'
 #endif
-	    );
+    );
 }
 static DRIVER_ATTR(esd_protection, S_IRUGO, esd_protection_show, NULL);
 
 static ssize_t slot_protocol_show(struct device_driver *dev, char *buf)
 {
-	return sprintf(buf, "CONFIG_CTS_SLOTPROTOCOL: %c\n",
+    return sprintf(buf, "CONFIG_CTS_SLOTPROTOCOL: %c\n",
 #ifdef CONFIG_CTS_SLOTPROTOCOL
         'Y'
 #else
         'N'
 #endif
-	    );
+    );
 }
 static DRIVER_ATTR(slot_protocol, S_IRUGO, slot_protocol_show, NULL);
 
 static ssize_t i2c_xfer_size_show(struct device_driver *dev, char *buf)
 {
-	return sprintf(buf, "CFG_CTS_MAX_I2C_XFER_SIZE: %d\n",
+    return sprintf(buf, "CFG_CTS_MAX_I2C_XFER_SIZE: %d\n",
         CFG_CTS_MAX_I2C_XFER_SIZE);
 }
 static DRIVER_ATTR(i2c_xfer_size, S_IRUGO, i2c_xfer_size_show, NULL);
@@ -429,18 +525,18 @@ static struct attribute *cts_i2c_driver_config_attrs[] = {
     &driver_attr_wrap_x.attr,
     &driver_attr_wrap_y.attr,
     &driver_attr_force_update.attr,
-	&driver_attr_max_touch_num.attr,
-	&driver_attr_vkey.attr,
+    &driver_attr_max_touch_num.attr,
+    &driver_attr_vkey.attr,
     &driver_attr_gesture.attr,
-	&driver_attr_esd_protection.attr,
+    &driver_attr_esd_protection.attr,
     &driver_attr_slot_protocol.attr,
     &driver_attr_i2c_xfer_size.attr,
-	NULL
+    NULL
 };
 
 static const struct attribute_group cts_i2c_driver_config_group = {
     .name = "config",
-	.attrs = cts_i2c_driver_config_attrs,
+    .attrs = cts_i2c_driver_config_attrs,
 };
 
 static const struct attribute_group *cts_i2c_driver_config_groups[] = {
@@ -474,21 +570,37 @@ static struct i2c_driver cts_i2c_driver = {
 #ifdef CONFIG_CTS_SYSFS
         .groups = cts_i2c_driver_config_groups,
 #endif /* CONFIG_CTS_SYSFS */
+#ifdef CONFIG_CTS_PM_LEGACY
+        .suspend = cts_i2c_driver_suspend,
+        .resume  = cts_i2c_driver_resume,
+#endif /* CONFIG_CTS_PM_LEGACY */
+#ifdef CONFIG_CTS_PM_GENERIC
+        .pm = &cts_i2c_driver_pm_ops,
+#endif /* CONFIG_CTS_PM_GENERIC */
+
     },
     .id_table = cts_i2c_device_id_table,
 };
 
-int cts_i2c_driver_init(void)
+static int __init cts_i2c_driver_init(void)
 {
     cts_info("Init");
 
     return i2c_add_driver(&cts_i2c_driver);
 }
 
-void cts_i2c_driver_exit(void)
+static void __exit cts_i2c_driver_exit(void)
 {
     cts_info("Exit");
 
     i2c_del_driver(&cts_i2c_driver);
 }
+
+module_init(cts_i2c_driver_init);
+module_exit(cts_i2c_driver_exit);
+
+MODULE_DESCRIPTION("Chipone Touchscreen Driver for QualComm platform");
+MODULE_VERSION(CFG_CTS_DRIVER_VERSION);
+MODULE_AUTHOR("Miao Defang <dfmiao@chiponeic.com>");
+MODULE_LICENSE("GPL");
 
