@@ -32,6 +32,16 @@ static struct cts_device_hwdata cts_device_hwdatas[] = {
         .ver_offset = 0x100,
     },
     {
+        .name = "ICNT88xx",
+        .hwid = CTS_HWID_ICNT88XX,
+        .fwid = CTS_FWID_ICNT88XX,
+        .num_row = 42,
+        .num_col = 30,
+        .sram_size = 45 * 1024,
+        .program_addr_width = 3,
+        .ver_offset = 0x100,
+    },
+    {
         .name = "ICNT87xx",
         .hwid = CTS_HWID_ICNT87XX,
         .fwid = CTS_FWID_ICNT87XX,
@@ -719,7 +729,8 @@ init_ic_type:
     }else if(strcmp(cts_dev->hwdata->name, "ICNT82xx") == 0){
 //
     }else if((strcmp(cts_dev->hwdata->name, "ICNT85xx") == 0)
-        ||(strcmp(cts_dev->hwdata->name, "ICNT86xx") == 0)){
+        ||(strcmp(cts_dev->hwdata->name, "ICNT86xx") == 0)
+        ||(strcmp(cts_dev->hwdata->name, "ICNT88xx") == 0)){
         flash_id = icn85xx_read_flashid(cts_dev);
 //
     }else if(strcmp(cts_dev->hwdata->name, "ICNT89xx") == 0){
@@ -1384,7 +1395,8 @@ int cts_enter_normal_mode(struct cts_device *cts_dev)
     else if(strcmp(cts_dev->hwdata->name, "ICNT82xx") == 0){
         //
     }else if((strcmp(cts_dev->hwdata->name, "ICNT85xx") == 0)
-        ||(strcmp(cts_dev->hwdata->name, "ICNT86xx") == 0)){
+        ||(strcmp(cts_dev->hwdata->name, "ICNT86xx") == 0)
+        ||(strcmp(cts_dev->hwdata->name, "ICNT88xx") == 0)){
         ret = cts_hw_reg_writeb_retry(cts_dev, 0x40400, 0x03, 5, 5);//boot from sram
         
     }else if(strcmp(cts_dev->hwdata->name, "ICNT89xx") == 0){
@@ -1407,11 +1419,14 @@ int cts_enter_normal_mode(struct cts_device *cts_dev)
         goto err_init_i2c_normal_mode;
     }
 
+#if 0
     ret = cts_init_fwdata(cts_dev);
     if (ret) {
         cts_err("Device init firmware data failed %d", ret);
         return ret;
     }
+#endif
+
 #ifdef SUPPORT_SENSOR_ID
     ret = cts_get_sensor_id_info(cts_dev);
     if (ret) {

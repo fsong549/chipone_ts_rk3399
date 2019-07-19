@@ -12,7 +12,7 @@
 
 #ifdef CFG_CTS_DRIVER_BUILTIN_FIRMWARE
 #include "icnt89xx_fw.h"
-//#include "icnt88xx_fw.h"
+#include "icnt88xx_fw.h"
 #include "icnt87xx_fw.h"
 #include "icnt86xx_fw.h"
 #include "icnt85xx_fw.h"
@@ -34,6 +34,14 @@ struct cts_firmware cts_driver_builtin_firmwares[] = {
         .fwid = CTS_FWID_ICNT86XX,
         .data = icnt86xx_driver_builtin_firmware,
         .size = ARRAY_SIZE(icnt86xx_driver_builtin_firmware),
+        .ver_offset = 0x100
+    },
+    {
+        .name = "ICNT88xx",      /* MUST set non-NULL */
+        .hwid = CTS_HWID_ICNT88XX,
+        .fwid = CTS_FWID_ICNT88XX,
+        .data = icnt88xx_driver_builtin_firmware,
+        .size = ARRAY_SIZE(icnt88xx_driver_builtin_firmware),
         .ver_offset = 0x100
     },
     {
@@ -455,7 +463,7 @@ const struct cts_firmware *cts_request_driver_builtin_firmware_by_index(
                  "hwid: %04x fwid: %04x size: %zu INVALID",
             firmware->name, firmware->hwid, firmware->hwid, firmware->size);
     } else {
-        cts_warn("Request driver builtin by chip_index %u too large >= %u"
+        cts_warn("Request driver builtin by chip_index %u too large >= %ld"
             "or fw_index %u too large >= %d",
             chip_index, NUM_DRIVER_BUILTIN_FIRMWARE,
             fw_index,cts_get_fw_num_driver_builtin());
@@ -835,7 +843,7 @@ retry_upgrade:
 
 
     }else if((strcmp(firmware->name, "ICNT85xx") == 0)
-    ||(strcmp(firmware->name, "ICNT86xx") == 0)){
+    ||(strcmp(firmware->name, "ICNT86xx") == 0)||(strcmp(firmware->name, "ICNT88xx") == 0)){
         ret = icnt85xx_fw_update(cts_dev, firmware, to_flash);
         if (ret) {
             cts_err("Update firmware failed %d ",ret);

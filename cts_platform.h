@@ -41,6 +41,8 @@
 #include <linux/notifier.h>
 
 #include "cts_config.h"
+#include "cts_plat_rockchip_config.h"
+
 
 extern bool cts_show_debug_log;
 

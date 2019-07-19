@@ -1,7 +1,7 @@
-#ifndef CTS_PLAT_QCOM_CONFIG_H
-#define CTS_PLAT_QCOM_CONFIG_H
+#ifndef CTS_PLAT_ROCKCHIP_CONFIG_H
+#define CTS_PLAT_ROCKCHIP_CONFIG_H
 
-#define CONFIG_CTS_PM_FB_NOTIFIER
+//#define CONFIG_CTS_PM_FB_NOTIFIER
 
 #if !defined(CONFIG_CTS_PM_FB_NOTIFIER)
 #if defined(CONFIG_PM_SLEEP) && defined(CONFIG_PM_SUSPEND)
@@ -38,5 +38,5 @@
 #define CFG_CTS_OF_Y_RESOLUTION_NAME     "chipone,y-res"
 #endif /* CONFIG_CTS_OF */
 
-#endif /* CTS_PLAT_QCOM_CONFIG_H */
+#endif /* CTS_PLAT_ROCKCHIP_CONFIG_H */
 

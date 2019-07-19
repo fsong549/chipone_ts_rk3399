@@ -35,7 +35,7 @@
 #define CFG_CTS_MAX_TOUCH_NUM               (5)
 
 /* Virtual key support */
-#define CONFIG_CTS_VIRTUALKEY
+//#define CONFIG_CTS_VIRTUALKEY
 #ifdef CONFIG_CTS_VIRTUALKEY
     #define CFG_CTS_MAX_VKEY_NUM            (4)
     #define CFG_CTS_NUM_VKEY                (3)
@@ -93,9 +93,9 @@
  * Platform configurations
  ****************************************************************************/
 
-#ifdef CONFIG_ARCH_MSM
-#include "cts_plat_qcom_config.h"
-#endif /* CONFIG_ARCH_MSM */
+#ifdef CONFIG_ARCH_ROCKCHIP
+#include "cts_plat_rockchip_config.h"
+#endif /* CONFIG_ARCH_ROCKCHIP */
 
 #endif /* CTS_CONFIG_H */
 

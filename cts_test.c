@@ -1037,7 +1037,7 @@ int cts_fw_version_test( struct cts_device * cts_dev, u16 fw_ver)
     
     cts_info("cts firmware version test");
     
-    cts_info("request log memery size: %d", PAGE_SIZE);
+    cts_info("request log memery size: %ld", PAGE_SIZE);
     buf = (char*)kzalloc(PAGE_SIZE, GFP_KERNEL);
     if(buf == NULL){
         cts_err("allocate memery for firmware version test log fail");
@@ -1090,7 +1090,7 @@ int cts_short_test(struct cts_device *cts_dev, u16 threshold)
         return -ENOMEM;
     }
     
-    cts_info("request short test log memery size: %d", PAGE_SIZE);
+    cts_info("request short test log memery size: %ld", PAGE_SIZE);
     buf = (char*)kzalloc(PAGE_SIZE, GFP_KERNEL);
     if(buf == NULL){
         cts_err("allocate memery for short test log fail");
@@ -1163,7 +1163,7 @@ int cts_rawdata_test(struct cts_device *cts_dev, u16 th_min, u16 th_max)
     
     cts_info("cts rawdata test");
 
-    cts_info("request rawdata test log memery size: %d", PAGE_SIZE);
+    cts_info("request rawdata test log memery size: %ld", PAGE_SIZE);
     buf = (char*)kzalloc(PAGE_SIZE, GFP_KERNEL);
     if(buf == NULL){
         cts_err("allocate memery for rawdata test log fail");
@@ -1202,7 +1202,7 @@ int cts_open_test(struct cts_device *cts_dev, u16 th)
     
     cts_info("cts open test");
     
-    cts_info("request log memery size: %d", PAGE_SIZE);
+    cts_info("request log memery size: %ld", PAGE_SIZE);
     buf = (char*)kzalloc(PAGE_SIZE, GFP_KERNEL);
     if(buf == NULL){
         cts_err("allocate memery for open test log fail");

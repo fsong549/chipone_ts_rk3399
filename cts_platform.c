@@ -345,7 +345,9 @@ int cts_plat_request_resource(struct cts_platform_data *pdata)
         goto err_free_int;
     }
 #endif /* CFG_CTS_HAS_RESET_PIN */
-
+gpio_direction_input(pdata->int_gpio);
+gpio_direction_output(pdata->rst_gpio,1);
+cts_info("gpio_direction_input irq     \n");
 
     return 0;
 
@@ -386,11 +388,18 @@ int cts_plat_request_irq(struct cts_platform_data *pdata)
      * If IRQ request succeed, IRQ will be enbled !!!
      */
     ret = request_threaded_irq(pdata->irq,
-            NULL, cts_plat_irq_handler, IRQF_TRIGGER_RISING | IRQF_ONESHOT,
+            NULL, cts_plat_irq_handler, IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
             pdata->i2c_client->dev.driver->name, pdata);
 #else /* CONFIG_GENERIC_HARDIRQS */
+
+  /*
     ret = request_irq(pdata->irq,
-            cts_plat_irq_handler, IRQF_TRIGGER_RISING | IRQF_ONESHOT,
+            cts_plat_irq_handler, IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+            pdata->i2c_client->dev.driver->name, pdata);
+  */
+
+ret = devm_request_threaded_irq(&(pdata->i2c_client->dev), pdata->irq, NULL,
+            cts_plat_irq_handler, IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
             pdata->i2c_client->dev.driver->name, pdata);
 #endif /* CONFIG_GENERIC_HARDIRQS */
     if (ret) {
